@@ -1,0 +1,110 @@
+version: "3"
+
+services:
+# hub
+  kafka-hub: &kafka-hub
+    image: docker.io/bitnami/kafka:3.6
+    ports:
+      - "9092:9092"
+      - "9094:9094"
+    environment: &kafka_env
+      KAFKA_CFG_NODE_ID: 0
+      KAFKA_CFG_PROCESS_ROLES: controller,broker
+      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: 0@kafka-hub:9093
+      KAFKA_CFG_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093,EXTERNAL://:9094
+      KAFKA_CFG_ADVERTISED_LISTENERS: PLAINTEXT://kafka-hub:9092,EXTERNAL://localhost:9094
+      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,EXTERNAL:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CFG_CONTROLLER_LISTENER_NAMES: CONTROLLER
+    healthcheck:
+      test: kafka-cluster.sh cluster-id --bootstrap-server localhost:9092 || exit 1
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+  
+  kafka-ui-hub: &kafka-ui-hub
+    container_name: kafka-ui-hub
+    image: provectuslabs/kafka-ui:latest
+    ports:
+      - 8080:8080
+    depends_on:
+      kafka-hub:
+        condition: service_healthy
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka-hub:9092
+
+# spoke1
+  kafka-spoke1: 
+    <<: *kafka-hub
+    container_name: kafka-spoke1
+    environment:
+      <<: *kafka_env
+      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: 0@kafka-spoke1:9093
+      KAFKA_CFG_ADVERTISED_LISTENERS: PLAINTEXT://kafka-spoke1:9092,EXTERNAL://localhost:9094
+    ports:
+      - "9192:9092"
+      - "9194:9094"
+
+  kafka-ui-spoke1:
+    <<: *kafka-ui-hub
+    container_name: kafka-ui-spoke1
+    ports:
+      - 8180:8080
+    depends_on: &depends-kafka-spoke1
+      kafka-spoke1:
+        condition: service_healthy
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka-spoke1:9092
+
+  producer-spoke1-non-replicated: &producer-spoke1
+    container_name: producer-spoke1
+    build:
+      context: ./SpokeProduceEvents
+      dockerfile: ./Dockerfile
+    command: ./SpokeProduceEvents --bootstrap kafka-spoke1:9092 --count 1000 --topic nonreplicated --msg "non-replicated-message"
+    depends_on: *depends-kafka-spoke1
+
+  producer-spoke1-replicated: 
+    <<: *producer-spoke1
+    container_name: producer-spoke1-replicated
+    command: ./SpokeProduceEvents --bootstrap kafka-spoke1:9092 --count 1000 --topic topic1 --msg "replicated-on-topic1" && ./SpokeProduceEvents --bootstrap kafka-spoke1:9092 --count 1000 --topic topic2 --msg "replicated-on-topic2"
+
+# spoke2
+  kafka-spoke2: 
+    <<: *kafka-hub
+    container_name: kafka-spoke2
+    environment:
+      <<: *kafka_env
+      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: 0@kafka-spoke2:9093
+      KAFKA_CFG_ADVERTISED_LISTENERS: PLAINTEXT://kafka-spoke2:9092,EXTERNAL://localhost:9094
+    ports:
+      - "9292:9092"
+      - "9294:9094"
+
+  kafka-ui-spoke2:
+    <<: *kafka-ui-hub
+    container_name: kafka-ui-spoke2
+    ports:
+      - 8280:8080
+    depends_on: &depends-kafka-spoke2
+      kafka-spoke2:
+        condition: service_healthy
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka-spoke2:9092
+
+  producer-spoke2-non-replicated: &producer-spoke2
+    container_name: producer-spoke2
+    build:
+      context: ./SpokeProduceEvents
+      dockerfile: ./Dockerfile
+    command: ./SpokeProduceEvents --bootstrap kafka-spoke2:9092 --count 1000 --topic nonreplicated --msg "non-replicated-message"
+    depends_on: *depends-kafka-spoke2
+
+  producer-spoke2-replicated: 
+    <<: *producer-spoke2
+    container_name: producer-spoke2-replicated
+    command: ./SpokeProduceEvents --bootstrap kafka-spoke2:9092 --count 1000 --topic topic1 --msg "spoke2 replicated on topic1" && ./SpokeProduceEvents --bootstrap kafka-spoke2:9092 --count 1000 --topic topic2 --msg "spoke2 replicated on topic2"
+
