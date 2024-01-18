@@ -27,12 +27,35 @@ services:
     image: provectuslabs/kafka-ui:latest
     ports:
       - 8080:8080
-    depends_on:
-      kafka-hub:
+    depends_on: &depends-kafka-hub
+      kafka-hub: &depends-service_healthy
         condition: service_healthy
     environment:
       KAFKA_CLUSTERS_0_NAME: local
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka-hub:9092
+
+# mirror maker
+  mirrormaker-spoke1:
+    image: 'wpietri/mirror-maker:2'
+    depends_on:
+      <<: *depends-kafka-hub
+      kafka-spoke1:
+        <<: *depends-service_healthy
+    environment:
+      - SOURCE=kafka-spoke1:9092
+      - DESTINATION=kafka-hub:9092
+      - TOPICS=mux-replication
+
+  mirrormaker-spoke2:
+    image: 'wpietri/mirror-maker:2'
+    depends_on:
+      <<: *depends-kafka-hub
+      kafka-spoke2:
+        <<: *depends-service_healthy
+    environment:
+      - SOURCE=kafka-spoke2:9092
+      - DESTINATION=kafka-hub:9092
+      - TOPICS=mux-replication
 
 # spoke1
   kafka-spoke1: 
@@ -53,23 +76,39 @@ services:
       - 8180:8080
     depends_on: &depends-kafka-spoke1
       kafka-spoke1:
-        condition: service_healthy
+        <<: *depends-service_healthy
     environment:
       KAFKA_CLUSTERS_0_NAME: local
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka-spoke1:9092
 
-  producer-spoke1-non-replicated: &producer-spoke1
+  mux-spoke1: &mux-spoke1
+    container_name: mux-spoke1
+    image: spoke-multiplexer
+    build:
+      context: ./SpokeMultiplexer
+      dockerfile: ./Dockerfile
+    command: ./SpokeMultiplexer --bootstrap kafka-spoke1:9092  --source spoke1 --topics topic1 topic2
+    depends_on: *depends-kafka-spoke1
+
+  producer-spoke1-non-replicated:
     container_name: producer-spoke1
+    image: spoke-produce-events
     build:
       context: ./SpokeProduceEvents
       dockerfile: ./Dockerfile
     command: ./SpokeProduceEvents --bootstrap kafka-spoke1:9092 --count 1000 --topic nonreplicated --msg "non-replicated-message"
     depends_on: *depends-kafka-spoke1
 
-  producer-spoke1-replicated: 
-    <<: *producer-spoke1
+  producer-spoke1-replicated: &producer-spoke1-no-build
+    image: spoke-produce-events
     container_name: producer-spoke1-replicated
-    command: ./SpokeProduceEvents --bootstrap kafka-spoke1:9092 --count 1000 --topic topic1 --msg "replicated-on-topic1" && ./SpokeProduceEvents --bootstrap kafka-spoke1:9092 --count 1000 --topic topic2 --msg "replicated-on-topic2"
+    command: ./SpokeProduceEvents --bootstrap kafka-spoke1:9092 --count 1000 --topic topic1 --msg "replicated-on-topic1"
+    depends_on: *depends-kafka-spoke1
+    
+  producer-spoke1-replicated2: 
+    <<: *producer-spoke1-no-build
+    container_name: producer-spoke1-replicated2
+    command: ./SpokeProduceEvents --bootstrap kafka-spoke1:9092 --count 1000 --topic topic2 --msg "replicated-on-topic2"
 
 # spoke2
   kafka-spoke2: 
@@ -90,21 +129,30 @@ services:
       - 8280:8080
     depends_on: &depends-kafka-spoke2
       kafka-spoke2:
-        condition: service_healthy
+        <<: *depends-service_healthy
     environment:
       KAFKA_CLUSTERS_0_NAME: local
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka-spoke2:9092
 
+  mux-spoke2:
+    container_name: mux-spoke2
+    image: spoke-multiplexer
+    command: ./SpokeMultiplexer --bootstrap kafka-spoke2:9092  --source spoke2 --topics topic1 topic2
+    depends_on: *depends-kafka-spoke2
+
   producer-spoke2-non-replicated: &producer-spoke2
+    <<: *producer-spoke1-no-build
     container_name: producer-spoke2
-    build:
-      context: ./SpokeProduceEvents
-      dockerfile: ./Dockerfile
     command: ./SpokeProduceEvents --bootstrap kafka-spoke2:9092 --count 1000 --topic nonreplicated --msg "non-replicated-message"
     depends_on: *depends-kafka-spoke2
 
   producer-spoke2-replicated: 
     <<: *producer-spoke2
     container_name: producer-spoke2-replicated
-    command: ./SpokeProduceEvents --bootstrap kafka-spoke2:9092 --count 1000 --topic topic1 --msg "spoke2 replicated on topic1" && ./SpokeProduceEvents --bootstrap kafka-spoke2:9092 --count 1000 --topic topic2 --msg "spoke2 replicated on topic2"
+    command: ./SpokeProduceEvents --bootstrap kafka-spoke2:9092 --count 1000 --topic topic1 --msg "spoke2 replicated on topic1"
+    
+  producer-spoke2-replicated2: 
+    <<: *producer-spoke2
+    container_name: producer-spoke2-replicated2
+    command: ./SpokeProduceEvents --bootstrap kafka-spoke2:9092 --count 1000 --topic topic2 --msg "spoke2 replicated on topic2"
 
