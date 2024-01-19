@@ -39,7 +39,7 @@ func main() {
 	flag.StringVar(&bootstrapServers, "bootstrap", "localhost:9092", "Bootstrap server")
 	flag.StringVar(&muxTopic, "mux-topic", "mux-replication", "destination topic to produce multiplexed messages ")
 	flag.IntVar(&group, "group", 0, "Consumer Group")
-	flag.StringVar(&sourceIdentifier, "source", "remote-source", "A friendly name to identify the source kafka server")
+	flag.StringVar(&sourceIdentifier, "source", "remote-source", "A friendly name to identify the source kafka server. Appended to muxTopic as intermediate topic for mirrormaker")
 	flag.StringVar(&source, "topics", "topic1 topic2", "source topic(s)")
 
 	// Parse the command-line options
@@ -139,6 +139,7 @@ func main() {
 				}
 
 				muxTP := &e.TopicPartition
+				muxIntermediateTopic := muxTopic + "_" + sourceIdentifier
 
 				muxHeaders := []kafka.Header{
 					{Key: "MUX_SOURCE_TOPIC", Value: []byte(*muxTP.Topic)},
@@ -146,6 +147,7 @@ func main() {
 					{Key: "MUX_SOURCE_TIMESTAMP", Value: []byte(e.Timestamp.Format(time.RFC3339))},
 					{Key: "MUX_SOURCE_TIMESTAMP", Value: []byte(e.Timestamp.Format(time.RFC3339))},
 					{Key: "MUX_SOURCE_BOOTSTRAP_SERVERS", Value: []byte(bootstrapServers)},
+					{Key: "MUX_INTERMEDIATE_TOPIC", Value: []byte(muxIntermediateTopic)},
 					//we could use the adminClient.DescribeCluster() for the metadata.ClusterID
 					{Key: "MUX_SOURCE_IDENTIFIER", Value: []byte(sourceIdentifier)},
 				}
@@ -153,7 +155,7 @@ func main() {
 				msgHeaders := append(e.Headers, muxHeaders...)
 
 				err = p.Produce(&kafka.Message{
-					TopicPartition: kafka.TopicPartition{Topic: &muxTopic, Partition: kafka.PartitionAny},
+					TopicPartition: kafka.TopicPartition{Topic: &muxIntermediateTopic, Partition: kafka.PartitionAny},
 					Value:          []byte(e.Value),
 					Key:            e.Key,
 					Headers:        msgHeaders,
