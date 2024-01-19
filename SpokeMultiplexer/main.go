@@ -145,10 +145,10 @@ func main() {
 					{Key: "MUX_SOURCE_TOPIC", Value: []byte(*muxTP.Topic)},
 					{Key: "MUX_SOURCE_TOPIC_PARTITION", Value: []byte(strconv.Itoa(int(muxTP.Partition)))},
 					{Key: "MUX_SOURCE_TIMESTAMP", Value: []byte(e.Timestamp.Format(time.RFC3339))},
-					{Key: "MUX_SOURCE_TIMESTAMP", Value: []byte(e.Timestamp.Format(time.RFC3339))},
 					{Key: "MUX_SOURCE_BOOTSTRAP_SERVERS", Value: []byte(bootstrapServers)},
 					{Key: "MUX_INTERMEDIATE_TOPIC", Value: []byte(muxIntermediateTopic)},
-					//we could use the adminClient.DescribeCluster() for the metadata.ClusterID
+					// we could use the adminClient.DescribeCluster() for the metadata.ClusterID
+					// {Key: "MUX_SOURCE_CLUSTER_ID", Value: []byte("")},
 					{Key: "MUX_SOURCE_IDENTIFIER", Value: []byte(sourceIdentifier)},
 				}
 

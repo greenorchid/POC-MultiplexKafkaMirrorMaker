@@ -90,5 +90,6 @@ This is a very rudimentary mock-up. I've explcitly set a number of **sub-optimal
 
 ## References
 https://github.com/confluentinc/confluent-kafka-go/tree/master/examples
+
 https://docs.confluent.io/platform/current/connect/references/allconfigs.html#
 
